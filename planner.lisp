@@ -45,7 +45,7 @@ RETURNS: List of fluents as s-expression."
   (loop for p in predicates
      append
        (loop for args in (collect-args objects (predicate-arity p))
-          collect (TODO 'create-state-variables))))
+          collect (cons (predicate-name p) args))))
 
 (defstruct concrete-action
   name
@@ -115,7 +115,9 @@ Returns: List of s-expressions."
         (push op (gethash v hash))))
     ;; collect axioms
     (loop for var in state-vars
-       collect (TODO 'sat-frame-axioms))))
+       collect `(or (= ,(format-state-variable var step)
+			,(format-state-variable var (1+ step)))
+		    (or ,@(map 'list (lambda (op) (format-concrete-action op step)) (gethash var hash)))))))
 
 
 (defun sat-initial-state  (state-vars facts)
@@ -124,20 +126,30 @@ Returns: List of s-expressions."
   RETURNS: list of s-expressions (assertions)."
   (let* ((initial-true (facts-init facts))
          (initial-false (set-difference  state-vars initial-true :test #'equal)))
-    (TODO 'sat-initial-state)))
+    (append (map 'list #'(lambda (x) (format-state-variable x 0))  initial-true)
+	    (map 'list #'(lambda (x) `(not ,(format-state-variable x 0))) initial-false))))
 
 (defun sat-plan-operator (op i)
   "Construct operator encoding (transfer-function) for a single operarator at step i.
 
 RETURNS: An s-expression."
-  ;; HINT: use REWRITE-EXP
-  (TODO 'sat-plan-operator))
+  (labels (
+	   (strip-and (exp)
+	     (if (eq (car exp) 'and)
+		 (cdr exp))))
+    (let ((pres (strip-and (concrete-action-precondition op)))
+	  (effs (strip-and (concrete-action-effect op))))
+      `(and ,@(map 'list (lambda (exp) (rewrite-exp exp i)) pres)  ;; Preconditions
+	    ,@(map 'list (lambda (exp) (rewrite-exp exp (1+ i))) effs) ;; Effects
+	    ))))
 
 (defun sat-plan-exclusion (concrete-operators op i)
-  "Construct exclusion axioms or a single operarator at step i.
+  "Construct exclusion axioms for a single operarator at step i.
 
 RETURNS: An s-expression."
-  (TODO 'sat-plan-exclusion))
+  `(or (not ,(format-concrete-action op i)) (and ,@(loop for opi in concrete-operators
+	     when (not (eq opi op))
+	     collect `(not ,(format-concrete-action opi i))))))
 
 
 (defun sat-plan-encode (operators facts steps)
