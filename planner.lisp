@@ -116,8 +116,8 @@ Returns: List of s-expressions."
     ;; collect axioms
     (loop for var in state-vars
        collect `(or (= ,(format-state-variable var step)
-			,(format-state-variable var (1+ step)))
-		    (or ,@(map 'list (lambda (op) (format-concrete-action op step)) (gethash var hash)))))))
+		       ,(format-state-variable var (1+ step)))
+		    ,@(map 'list (lambda (op) (format-concrete-action op step)) (gethash var hash))))))
 
 
 (defun sat-initial-state  (state-vars facts)
@@ -133,21 +133,22 @@ Returns: List of s-expressions."
   "Construct operator encoding (transfer-function) for a single operarator at step i.
 
 RETURNS: An s-expression."
-  (labels (
-	   (strip-and (exp)
+  (labels ((strip-and (exp)
 	     (if (eq (car exp) 'and)
-		 (cdr exp))))
+		 (cdr exp)
+		 (list exp))))
     (let ((pres (strip-and (concrete-action-precondition op)))
 	  (effs (strip-and (concrete-action-effect op))))
-      `(and ,@(map 'list (lambda (exp) (rewrite-exp exp i)) pres)  ;; Preconditions
-	    ,@(map 'list (lambda (exp) (rewrite-exp exp (1+ i))) effs) ;; Effects
-	    ))))
+      `(=> ,(format-concrete-action op i)
+	   (and ,@(map 'list (lambda (exp) (rewrite-exp exp i)) pres)  ;; Preconditions
+		,@(map 'list (lambda (exp) (rewrite-exp exp (1+ i))) effs) ;; Effects
+		)))))
 
 (defun sat-plan-exclusion (concrete-operators op i)
   "Construct exclusion axioms for a single operarator at step i.
 
 RETURNS: An s-expression."
-  `(or (not ,(format-concrete-action op i)) (and ,@(loop for opi in concrete-operators
+  `(=> ,(format-concrete-action op i) (and ,@(loop for opi in concrete-operators
 	     when (not (eq opi op))
 	     collect `(not ,(format-concrete-action opi i))))))
 
@@ -191,7 +192,7 @@ ACTIONS-VARIABLES: The subset of SAT-VARIABLES for acotions
 
       ;; initial state
       (add-asserts (sat-initial-state state-vars facts))
-
+      
       ;; goal state
       (let* ((goal (facts-goal facts)))
         (add-assert (rewrite-exp goal steps)))
@@ -200,12 +201,12 @@ ACTIONS-VARIABLES: The subset of SAT-VARIABLES for acotions
       (dotimes (i steps)
         (dolist (op concrete-operators)
           (add-assert (sat-plan-operator op i))))
-
+      
       ;; exclusion axioms
       (dotimes (i steps)
         (dolist (op concrete-operators)
           (add-assert (sat-plan-exclusion concrete-operators op i))))
-
+      
       ;; frame axioms
       (dotimes (i steps)
         (add-asserts (sat-frame-axioms state-vars concrete-operators i))))
@@ -227,7 +228,7 @@ ACTIONS-VARIABLES: The subset of SAT-VARIABLES for acotions
   (let ((plan))
     (dolist (x assignments)
       (destructuring-bind (var value) x
-        (when (eq 'true value)
+        (when (eq 'true value) 
           (push (unmangle-op (string var)) plan))))
     (sort plan (lambda (a b) (< (car a) (car b))))))
 
